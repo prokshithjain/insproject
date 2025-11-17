@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SecureStore — Dark Purple Neon</title>
+  <style>
+    /* Dark Purple Neon theme */
+    :root{
+      --bg:#0b0820;
+      --panel:#0f1022;
+      --muted:#9aa3c7;
+      --accent1:#7c3aed;
+      --accent2:#06b6d4;
+      --glass: rgba(255,255,255,0.03);
+      --neon: rgba(124,58,237,0.18);
+      --radius:14px;
+      --glass-2: rgba(255,255,255,0.02);
+    }
+    *{box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial}
+    html,body{height:100%;margin:0;background:
+      radial-gradient(1200px 400px at 10% 10%, rgba(124,58,237,0.08), transparent 8%),
+      linear-gradient(180deg,var(--bg),#06061b 60%); color:#e8efff}
+    .wrap{max-width:980px;margin:28px auto;padding:20px;border-radius:16px;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent); box-shadow:0 10px 40px rgba(2,6,23,0.7)}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .logo{display:flex;align-items:center;gap:12px}
+    .badge{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,var(--accent1),var(--accent2));display:flex;align-items:center;justify-content:center;font-weight:700;color:#021129;font-size:20px}
+    h1{margin:0;font-size:20px}
+    .hint{color:var(--muted);font-size:13px}
+    .card{background:var(--panel);padding:18px;border-radius:var(--radius);margin-top:18px;border:1px solid rgba(255,255,255,0.02)}
+    .row{display:flex;gap:12px}
+    .col{flex:1}
+    input,input[type=password],textarea,button,select{width:100%;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:var(--glass);color:inherit;outline:none}
+    textarea{resize:vertical}
+    .btn{padding:10px 14px;border-radius:10px;border:none;cursor:pointer}
+    .btn-primary{background:linear-gradient(90deg,var(--accent1),var(--accent2));color:#021129;font-weight:600}
+    .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.04)}
+    .small{width:160px}
+    .list{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+    .item{display:flex;align-items:center;justify-content:space-between;padding:10px;border-radius:10px;background:var(--glass-2)}
+    .meta{color:var(--muted);font-size:12px}
+    .danger{background:linear-gradient(90deg,#ff6b6b,#ff9a8a);color:#120005}
+    .top-actions{display:flex;gap:8px}
+    .footer{margin-top:12px;color:var(--muted);font-size:13px}
+    .neon-border{box-shadow:0 0 20px rgba(124,58,237,0.06)}
+    pre{background:rgba(0,0,0,0.15);padding:12px;border-radius:8px;overflow:auto}
+    .flex-center{display:flex;align-items:center;gap:8px}
+    @media (max-width:820px){.row{flex-direction:column}.small{width:100%}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="logo">
+        <div class="badge">SS</div>
+        <div>
+          <h1>SecureStore</h1>
+          <div class="hint">Client-side encryption — Dark Purple Neon</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button id="exportBtn" class="btn btn-ghost">Export Vault</button>
+        <button id="importBtn" class="btn btn-ghost">Import Vault</button>
+        <button id="resetBtn" class="btn btn-ghost">Reset Vault</button>
+      </div>
+    </div>
+
+    <!-- AUTH CARD -->
+    <div id="authCard" class="card">
+      <div id="authContent"></div>
+    </div>
+
+    <!-- VAULT CARD -->
+    <div id="vaultCard" class="card" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <h2 style="margin:0">Your Secure Notes</h2>
+          <div class="hint">Encrypted locally in your browser. Password not shared.</div>
+        </div>
+        <div class="flex-center">
+          <div class="meta" id="userMeta"></div>
+          <button id="logoutBtn" class="btn btn-ghost small">Logout</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <label><div class="hint">Secret note</div>
+          <textarea id="noteText" rows="4" placeholder="Type a secret message..."></textarea>
+        </label>
+        <div class="row" style="margin-top:8px">
+          <input id="notePwd" type="password" placeholder="Your password (used to encrypt)" class="col"/>
+          <button id="saveBtn" class="btn btn-primary small">Encrypt & Store</button>
+        </div>
+        <div class="footer">Tip: Use strong password. If you forget it, your data cannot be recovered.</div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0">Items</h3>
+        <div id="itemsList" class="list"></div>
+      </div>
+
+      <div id="preview" class="card" style="display:none;margin-top:12px">
+        <h4>Decrypted</h4>
+        <pre id="previewText"></pre>
+      </div>
+    </div>
+
+    <div class="footer">⚠️ Security note: This demo uses PBKDF2 (200k iterations) and AES-GCM. Keep your password safe. Use HTTPS if you later host files.</div>
+  </div>
+
+  <input id="fileInput" type="file" accept=".json" style="display:none"/>
+
+  <script>
+  // SecureStore (client-only) — Dark Purple Neon
+  // - PBKDF2 (200k iterations) to derive AES-GCM key
+  // - AES-GCM for encryption (12-byte nonce)
+  // - Storage structure stored in localStorage under 'securestore_v1'
+  // - Auth: store an encrypted known plaintext to verify password on login
+
+  (function(){
+    // Config
+    const STORAGE_KEY = 'securestore_v1';
+    const AUTH_PLAINTEXT = 'SecureStoreAuth:v1';
+    const PBKDF2_ITERS = 200000;
+    const SALT_BYTES = 16;
+    const IV_BYTES = 12;
+
+    // UI elements
+    const authCard = document.getElementById('authCard');
+    const authContent = document.getElementById('authContent');
+    const vaultCard = document.getElementById('vaultCard');
+    const userMeta = document.getElementById('userMeta');
+    const noteText = document.getElementById('noteText');
+    const notePwd = document.getElementById('notePwd');
+    const saveBtn = document.getElementById('saveBtn');
+    const itemsList = document.getElementById('itemsList');
+    const preview = document.getElementById('preview');
+    const previewText = document.getElementById('previewText');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const fileInput = document.getElementById('fileInput');
+
+    // === Utilities ===
+    function u8ToB64(u8){ let s=''; for(let i=0;i<u8.length;i++) s+=String.fromCharCode(u8[i]); return btoa(s) }
+    function b64ToU8(b64){ const bin = atob(b64); const u = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u }
+    function str2u8(s){ return new TextEncoder().encode(s) }
+    function u82str(u8){ return new TextDecoder().decode(u8) }
+    function nowISO(){ return new Date().toISOString() }
+
+    function randomBytes(n){ const a = crypto.getRandomValues(new Uint8Array(n)); return a }
+
+    // === Storage model ===
+    // {
+    //   salt: base64,
+    //   iters: number,
+    //   auth: { ciphertext: base64, iv: base64 },
+    //   items: [ { id, name, ciphertext: b64, iv: b64, createdAt } ]
+    // }
+    function loadStore(){ try{ const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : null } catch(e){ return null } }
+    function saveStore(obj){ localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)) }
+
+    // === Crypto helpers ===
+    async function deriveKey(password, saltB64, iters=PBKDF2_ITERS){
+      const salt = b64ToU8(saltB64);
+      const pwKey = await crypto.subtle.importKey('raw', str2u8(password), 'PBKDF2', false, ['deriveKey']);
+      const key = await crypto.subtle.deriveKey(
+        {name:'PBKDF2', salt, iterations: iters, hash:'SHA-256'},
+        pwKey,
+        {name:'AES-GCM', length:256},
+        false,
+        ['encrypt','decrypt']
+      );
+      return key;
+    }
+
+    async function encryptWithKey(key, plaintext){
+      const iv = randomBytes(IV_BYTES);
+      const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, str2u8(plaintext));
+      return { ciphertext: u8ToB64(new Uint8Array(ct)), iv: u8ToB64(iv) };
+    }
+
+    async function decryptWithKey(key, ciphertextB64, ivB64){
+      const ct = b64ToU8(ciphertextB64).buffer;
+      const iv = b64ToU8(ivB64);
+      try{
+        const buf = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, ct);
+        return u82str(new Uint8Array(buf));
+      }catch(e){
+        throw new Error('Decryption failed (wrong password or corrupted data).');
+      }
+    }
+
+    // === Auth workflow ===
+    function hasVault(){ return !!loadStore() }
+    function ensureAuthUI(){
+      const store = loadStore();
+      if(!store){
+        // first-time: show registration (create password)
+        authContent.innerHTML = `
+          <h2 style="margin-top:0">Create Vault</h2>
+          <div class="hint">Create a password to secure your local vault. Remember it — we cannot recover your notes for you.</div>
+          <div style="margin-top:12px" class="row">
+            <input id="regPwd" type="password" placeholder="Create password" class="col"/>
+            <input id="regPwd2" type="password" placeholder="Confirm password" class="col"/>
+            <button id="regBtn" class="btn btn-primary small">Create</button>
+          </div>
+        `;
+        document.getElementById('regBtn').onclick = async ()=>{
+          const p1 = document.getElementById('regPwd').value;
+          const p2 = document.getElementById('regPwd2').value;
+          if(!p1 || !p2) return alert('Enter password twice');
+          if(p1 !== p2) return alert('Passwords do not match');
+          await createVault(p1);
+        }
+      }else{
+        // vault exists -> show login
+        authContent.innerHTML = `
+          <h2 style="margin-top:0">Unlock Vault</h2>
+          <div class="hint">Enter your password to unlock your local encrypted vault.</div>
+          <div style="margin-top:12px" class="row">
+            <input id="loginPwd" type="password" placeholder="Password" class="col"/>
+            <button id="loginBtn" class="btn btn-primary small">Unlock</button>
+          </div>
+          <div class="footer" style="margin-top:8px">If you forgot your password your encrypted data cannot be recovered.</div>
+        `;
+        document.getElementById('loginBtn').onclick = async ()=>{
+          const pw = document.getElementById('loginPwd').value;
+          if(!pw) return alert('Enter password');
+          await unlockVault(pw);
+        }
+      }
+    }
+
+    async function createVault(password){
+      const salt = u8ToB64(randomBytes(SALT_BYTES));
+      const key = await deriveKey(password, salt);
+      // create auth ciphertext
+      const auth = await encryptWithKey(key, AUTH_PLAINTEXT);
+      const store = { salt, iters: PBKDF2_ITERS, auth, items: [] };
+      saveStore(store);
+      alert('Vault created. Now unlock using your password.');
+      ensureAuthUI();
+    }
+
+    async function unlockVault(password){
+      const store = loadStore();
+      if(!store) return alert('No vault found');
+      try{
+        const key = await deriveKey(password, store.salt, store.iters);
+        const txt = await decryptWithKey(key, store.auth.ciphertext, store.auth.iv);
+        if(txt !== AUTH_PLAINTEXT) throw new Error('auth mismatch');
+        // success
+        sessionStorage.setItem('ss_unlocked', '1'); // simple ephemeral marker
+        sessionStorage.setItem('ss_pwd_hint', ''); // no pwd stored — but we can keep ephemeral variable
+        // store a derivedKey reference? keep password out of storage. For encrypting later we will re-derive as needed.
+        showVault(password);
+      }catch(e){
+        alert('Unlock failed: wrong password or corrupted vault.');
+      }
+    }
+
+    function lockVault(){
+      sessionStorage.removeItem('ss_unlocked');
+      userMeta.textContent = '';
+      vaultCard.style.display = 'none';
+      authCard.style.display = '';
+      ensureAuthUI();
+      preview.style.display = 'none';
+    }
+
+    async function showVault(password){
+      // show vault UI
+      authCard.style.display = 'none';
+      vaultCard.style.display = '';
+      userMeta.textContent = 'Unlocked';
+      refreshItems();
+    }
+
+    // === Vault operations ===
+    async function addNote(plaintext, password){
+      if(!plaintext) return alert('Enter a message');
+      const store = loadStore();
+      if(!store) return alert('No vault');
+      // derive key per operation (avoids storing key)
+      const key = await deriveKey(password, store.salt, store.iters);
+      const enc = await encryptWithKey(key, plaintext);
+      const item = { id: crypto.randomUUID(), name: 'Note ' + new Date().toLocaleString(), ciphertext: enc.ciphertext, iv: enc.iv, createdAt: nowISO() };
+      store.items.unshift(item);
+      saveStore(store);
+      noteText.value = '';
+      notePwd.value = '';
+      refreshItems();
+      alert('Encrypted & stored locally');
+    }
+
+    function refreshItems(){
+      const store = loadStore();
+      itemsList.innerHTML = '';
+      if(!store || !store.items || store.items.length===0){
+        itemsList.innerHTML = '<div class="hint">No items yet</div>'; return;
+      }
+      store.items.forEach(it=>{
+        const el = document.createElement('div'); el.className='item';
+        el.innerHTML = `
+          <div>
+            <div style="font-weight:700">${escapeHtml(it.name)}</div>
+            <div class="meta">created: ${new Date(it.createdAt).toLocaleString()} • id: ${it.id.slice(0,8)}</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost small" data-id="${it.id}" data-action="decrypt">Decrypt</button>
+            <button class="btn btn-ghost small" data-id="${it.id}" data-action="copy">Copy</button>
+            <button class="btn danger small" data-id="${it.id}" data-action="delete">Delete</button>
+          </div>
+        `;
+        itemsList.appendChild(el);
+      });
+
+      // attach handlers
+      itemsList.querySelectorAll('button').forEach(btn=>{
+        btn.onclick = async (e)=>{
+          const id = btn.getAttribute('data-id');
+          const action = btn.getAttribute('data-action');
+          if(action === 'decrypt'){
+            // ask password then decrypt
+            const pw = prompt('Enter your password to decrypt this item:');
+            if(!pw) return;
+            await decryptItem(id, pw);
+          }else if(action === 'copy'){
+            const pw = prompt('Enter your password to decrypt and copy to clipboard:');
+            if(!pw) return;
+            try{
+              const text = await decryptItem(id, pw, true); // return text
+              await navigator.clipboard.writeText(text);
+              alert('Copied to clipboard');
+            }catch(e){ alert(e.message) }
+          }else if(action === 'delete'){
+            if(!confirm('Delete this item? This is permanent.')) return;
+            deleteItem(id);
+          }
+        }
+      });
+    }
+
+    async function decryptItem(id, password, returnText=false){
+      const store = loadStore();
+      if(!store) throw new Error('No vault');
+      const it = store.items.find(x=>x.id===id);
+      if(!it) throw new Error('Item not found');
+      const key = await deriveKey(password, store.salt, store.iters);
+      try{
+        const plain = await decryptWithKey(key, it.ciphertext, it.iv);
+        preview.style.display = '';
+        previewText.textContent = plain;
+        if(returnText) return plain;
+        return plain;
+      }catch(e){
+        throw e;
+      }
+    }
+
+    function deleteItem(id){
+      const store = loadStore();
+      store.items = store.items.filter(x=>x.id !== id);
+      saveStore(store);
+      refreshItems();
+    }
+
+    // === Export / Import / Reset ===
+    exportBtn.onclick = ()=>{
+      const store = loadStore();
+      if(!store) return alert('No vault to export');
+      const blob = new Blob([JSON.stringify(store, null, 2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'securestore_vault.json'; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    importBtn.onclick = ()=> fileInput.click();
+    fileInput.onchange = async (e)=>{
+      const f = e.target.files[0]; if(!f) return;
+      const raw = await f.text();
+      try{
+        const parsed = JSON.parse(raw);
+        // basic validation
+        if(!parsed.salt || !parsed.auth || !Array.isArray(parsed.items)) return alert('Invalid vault file');
+        // overwrite local store (ask user)
+        if(!confirm('Importing will replace your local vault. Continue?')) return;
+        saveStore(parsed);
+        alert('Vault imported. You will need your password to unlock.');
+        ensureAuthUI();
+      }catch(err){ alert('Invalid file: ' + err.message) }
+      fileInput.value = '';
+    }
+
+    resetBtn.onclick = ()=>{
+      if(!confirm('Reset (delete) the entire local vault? This will permanently remove all encrypted items.')) return;
+      localStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem('ss_unlocked');
+      ensureAuthUI();
+      vaultCard.style.display='none';
+      authCard.style.display='';
+      alert('Vault reset.');
+    }
+
+    logoutBtn.onclick = ()=>{
+      lockVault();
+    }
+
+    // === Helpers ===
+    function escapeHtml(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;') }
+
+    // save note btn
+    saveBtn.onclick = async ()=>{
+      const txt = noteText.value.trim();
+      const pw = notePwd.value;
+      if(!txt) return alert('Type a message');
+      if(!pw) return alert('Enter your password');
+      try{
+        await addNote(txt, pw);
+      }catch(e){ alert('Error: ' + e.message) }
+    }
+
+    // init UI on load
+    ensureAuthUI();
+
+    // keyboard shortcut: Ctrl+Shift+E -> export
+    document.addEventListener('keydown', (e)=>{ if(e.ctrlKey && e.shiftKey && e.key.toLowerCase()==='e'){ exportBtn.click() } });
+
+    // On page load, if unlocked in session storage, show vault (but we still need password when encrypting/decrypting)
+    if(sessionStorage.getItem('ss_unlocked')){
+      // we still don't store the password in memory — the user will enter password for operations
+      authCard.style.display='none';
+      vaultCard.style.display='';
+      userMeta.textContent = 'Unlocked (session)';
+      refreshItems();
+    }
+
+  })();
+  </script>
+</body>
+</html>
